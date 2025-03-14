@@ -4,7 +4,7 @@ import io
 import base64
 from PIL import Image
 import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+import time
 
 # 페이지 설정
 st.set_page_config(
@@ -168,7 +168,8 @@ generate_button = st.button("🚀 생성", use_container_width=True)
 
 # API 키가 입력되지 않은 경우 경고 메시지
 if not api_key:
-    st.warning("⚠️ 사이드바에 API 키를 먼저 입력해주세요")
+    st.warning("⚠️ 사이드바에 Gemini API 키를 먼저 입력해주세요", icon="⚠️")
+    st.info("💡 API 키는 Google AI Studio(https://makersuite.google.com/)에서 발급받을 수 있습니다", icon="💡")
 
 # 이미지 생성 함수
 def generate_images(prompt, api_key, num_images=1, image_size="1024x1024"):
@@ -179,74 +180,106 @@ def generate_images(prompt, api_key, num_images=1, image_size="1024x1024"):
         # 이미지 크기 파싱
         width, height = map(int, image_size.split('x'))
         
-        # 모델 설정 - 이제 Imagen 모델을 사용합니다
-        model = genai.GenerativeModel('imagen-4.0')
+        # 모델 설정 - gemini-1.5-pro 모델 사용 (이미지 생성 지원)
+        model = genai.GenerativeModel('gemini-1.5-pro')
         
         images = []
         
         with st.spinner(f"🎨 {num_images}장의 이미지를 생성 중입니다..."):
             for i in range(num_images):
-                # 이미지 생성 요청 설정
-                generation_config = {
-                    "temperature": 1.0,
-                    "top_p": 0.95,
-                    "top_k": 40,
-                    "max_output_tokens": 8192,
-                }
+                try:
+                    # 이미지 생성 요청 설정
+                    generation_config = {
+                        "temperature": 1.0,
+                        "top_p": 0.95,
+                        "top_k": 40,
+                        "max_output_tokens": 8192,
+                    }
+                    
+                    # 이미지 생성 프롬프트 설정
+                    image_prompt = f"{prompt}\n이미지만 생성해주세요. 한글 텍스트가 포함된 고품질 이미지로 생성해주세요."
                 
-                # 이미지 생성 프롬프트 설정
-                image_prompt = f"{prompt}\n이미지만 생성해주세요."
+                    # 이미지 생성 요청
+                    response = model.generate_content(
+                        image_prompt,
+                        generation_config=generation_config,
+                        stream=False
+                    )
+                    
+                    if hasattr(response, 'candidates') and len(response.candidates) > 0:
+                        for part in response.candidates[0].content.parts:
+                            if hasattr(part, 'inline_data') and part.inline_data:
+                                # Base64 디코딩하여 이미지 생성
+                                image_data = base64.b64decode(part.inline_data.data)
+                                image = Image.open(io.BytesIO(image_data))
+                                images.append(image)
+                                st.success(f"이미지 #{i+1} 생성 완료!")
+                                break
+                    
+                    # 다음 이미지 생성 전 잠시 대기 (API 제한 고려)
+                    if i < num_images - 1:
+                        time.sleep(1)
+                        
+                except Exception as inner_error:
+                    st.warning(f"이미지 #{i+1} 생성 중 오류: {str(inner_error)}")
+                    continue
                 
-                # 이미지 생성 요청 (Imagen 모델은 다른 매개변수를 사용)
-                response = model.generate_content(
-                    contents=image_prompt,
-                    generation_config=generation_config,
-                    stream=False
-                )
-                
-                # 응답에서 이미지 데이터 추출
-                for part in response.parts:
-                    if hasattr(part, 'inline_data') and part.inline_data:
-                        # Base64 디코딩하여 이미지 생성
-                        image_data = base64.b64decode(part.inline_data.data)
-                        image = Image.open(io.BytesIO(image_data))
-                        images.append(image)
-                        break
-        
         return images
     except Exception as e:
         st.error(f"이미지 생성 중 오류가 발생했습니다: {str(e)}")
+        # 자세한 오류 정보 표시
+        import traceback
+        st.code(traceback.format_exc(), language="python")
         return []
 
 # 이미지 생성 로직
-if generate_button and api_key:
-    images = generate_images(prompt, api_key, num_images, image_size)
-    
-    if images:
-        st.markdown("### ✅ 생성된 이미지")
-        
-        # 이미지 표시
-        st.markdown('<div class="image-container">', unsafe_allow_html=True)
-        cols = st.columns(min(num_images, 3))
-        
-        for i, image in enumerate(images):
-            col_idx = i % len(cols)
-            with cols[col_idx]:
-                st.markdown(f'<div class="image-card">', unsafe_allow_html=True)
-                st.image(image, caption=f"이미지 #{i+1}", use_column_width=True)
-                
-                # 이미지 다운로드 버튼
-                buf = io.BytesIO()
-                image.save(buf, format="PNG")
-                btn = st.download_button(
-                    label="💾 다운로드",
-                    data=buf.getvalue(),
-                    file_name=f"gemini_image_{i+1}.png",
-                    mime="image/png",
-                    use_container_width=True
-                )
-                st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+if generate_button:
+    if not api_key:
+        st.error("⚠️ API 키가 필요합니다! 사이드바에 API 키를 먼저 입력해주세요", icon="🔑")
     else:
-        st.error("이미지를 생성할 수 없습니다. 다른 프롬프트를 시도해보세요.")
+        # 프로그레스 바 표시
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        status_text.text("이미지 생성 준비 중...")
+        
+        # 이미지 생성 시작
+        status_text.text("🎨 이미지 생성을 시작합니다...")
+        progress_bar.progress(10)
+        
+        # 이미지 생성 실행
+        images = generate_images(prompt, api_key, num_images, image_size)
+        progress_bar.progress(90)
+        
+        if images:
+            status_text.text("✅ 이미지 생성 완료!")
+            progress_bar.progress(100)
+            
+            st.markdown("### ✅ 생성된 이미지")
+            
+            # 이미지 표시
+            st.markdown('<div class="image-container">', unsafe_allow_html=True)
+            cols = st.columns(min(num_images, 3))
+            
+            for i, image in enumerate(images):
+                col_idx = i % len(cols)
+                with cols[col_idx]:
+                    st.markdown(f'<div class="image-card">', unsafe_allow_html=True)
+                    st.image(image, caption=f"이미지 #{i+1}", use_column_width=True)
+                    
+                    # 이미지 다운로드 버튼
+                    buf = io.BytesIO()
+                    image.save(buf, format="PNG")
+                    btn = st.download_button(
+                        label="💾 다운로드",
+                        data=buf.getvalue(),
+                        file_name=f"gemini_image_{i+1}.png",
+                        mime="image/png",
+                        use_container_width=True
+                    )
+                    st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            progress_bar.progress(100)
+            status_text.text("❌ 이미지 생성 실패")
+            st.error("이미지를 생성할 수 없습니다. 다른 프롬프트를 시도하거나 API 키를 확인해보세요.")
