@@ -3,6 +3,7 @@ import google.generativeai as genai
 from PIL import Image
 import io
 import base64
+import re
 
 # 페이지 설정
 st.set_page_config(
@@ -174,13 +175,12 @@ def generate_images(prompt, api_key, num_images=1, seed=None):
         # Gemini 2.0 Flash Experimental 모델 사용
         model = genai.GenerativeModel('gemini-2.0-flash-experimental')
         
-        # 이미지 생성을 위한 설정
+        # 이미지 생성을 위한 설정 - response_mime_type 제거
         generation_config = {
             "temperature": 0.4,
             "top_p": 1,
             "top_k": 32,
             "max_output_tokens": 4096,
-            "response_mime_type": "image/png",  # 이미지 응답 형식 지정
         }
         
         # 시드 설정 (선택적)
@@ -191,20 +191,33 @@ def generate_images(prompt, api_key, num_images=1, seed=None):
         
         with st.spinner(f"🎨 {num_images}장의 이미지를 생성 중입니다..."):
             for i in range(num_images):
-                # 이미지 생성 요청
+                # 이미지 생성 요청 - 프롬프트에 이미지 생성 지시 추가
+                image_prompt = f"이미지 생성: {prompt}\n이미지만 생성해주세요. 텍스트 설명은 필요 없습니다."
+                
                 response = model.generate_content(
-                    prompt,
+                    image_prompt,
                     generation_config=generation_config,
                     stream=False
                 )
                 
-                # 응답에서 이미지 추출
+                # 응답에서 이미지 데이터 추출 시도
                 if hasattr(response, 'candidates') and len(response.candidates) > 0:
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'inline_data') and part.inline_data:
-                            image_data = base64.b64decode(part.inline_data.data)
-                            image = Image.open(io.BytesIO(image_data))
-                            images.append(image)
+                    text_content = response.candidates[0].content.parts[0].text
+                    
+                    # Base64 이미지 데이터 추출 시도
+                    base64_pattern = r'data:image\/[^;]+;base64,([^"]+)'
+                    matches = re.findall(base64_pattern, text_content)
+                    
+                    if matches:
+                        for match in matches:
+                            try:
+                                image_data = base64.b64decode(match)
+                                image = Image.open(io.BytesIO(image_data))
+                                images.append(image)
+                            except Exception as e:
+                                st.error(f"이미지 디코딩 오류: {str(e)}")
+                    else:
+                        st.info("응답에서 이미지 데이터를 찾을 수 없습니다. 다른 프롬프트를 시도해보세요.")
         
         return images
     except Exception as e:
