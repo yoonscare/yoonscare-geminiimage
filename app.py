@@ -4,6 +4,7 @@ import io
 import base64
 from PIL import Image
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # 페이지 설정
 st.set_page_config(
@@ -173,6 +174,14 @@ def generate_images(prompt, api_key, num_images=1, seed=None):
         # API 키 설정
         genai.configure(api_key=api_key)
         
+        # 안전 설정 구성
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+        
         # 모델 설정
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
         
@@ -186,29 +195,32 @@ def generate_images(prompt, api_key, num_images=1, seed=None):
                     "top_p": 0.95,
                     "top_k": 40,
                     "max_output_tokens": 8192,
+                    "response_mime_types": ["image/png"],
                 }
                 
                 # 시드 설정 (선택적)
                 if seed is not None:
-                    generation_config["seed"] = seed
+                    generation_config["seed"] = seed + i  # 각 이미지마다 다른 시드 사용
                 
                 # 이미지 생성 프롬프트 설정
-                image_prompt = f"{prompt}\n이미지만 생성해주세요. 텍스트 설명은 필요 없습니다."
+                image_prompt = f"{prompt}\n이미지만 생성해주세요."
                 
                 # 이미지 생성 요청
                 response = model.generate_content(
                     image_prompt,
                     generation_config=generation_config,
+                    safety_settings=safety_settings,
                     stream=False
                 )
                 
-                # 응답에서 이미지 데이터 추출 시도
-                if hasattr(response, 'candidates') and len(response.candidates) > 0:
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'inline_data') and part.inline_data:
-                            image_data = base64.b64decode(part.inline_data.data)
-                            image = Image.open(io.BytesIO(image_data))
-                            images.append(image)
+                # 응답에서 이미지 데이터 추출
+                for part in response.parts:
+                    if hasattr(part, 'inline_data') and part.inline_data:
+                        # Base64 디코딩하여 이미지 생성
+                        image_data = base64.b64decode(part.inline_data.data)
+                        image = Image.open(io.BytesIO(image_data))
+                        images.append(image)
+                        break
         
         return images
     except Exception as e:
