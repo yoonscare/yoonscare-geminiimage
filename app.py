@@ -131,7 +131,10 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 이미지 시드 조절 옵션 제거 (문제 해결을 위해)
+    # 이미지 시드 조절 옵션 (선택적)
+    use_image_seed = st.checkbox("이미지 시드 조절 사용")
+    if use_image_seed:
+        image_seed = st.number_input("이미지 시드 값", min_value=0, max_value=10000, value=42)
     
     st.markdown("---")
     
@@ -164,30 +167,38 @@ if not api_key:
     st.warning("⚠️ 사이드바에 API 키를 먼저 입력해주세요")
 
 # 이미지 생성 함수
-def generate_images(prompt, api_key, num_images=1):
+def generate_images(prompt, api_key, num_images=1, seed=None):
     try:
         genai.configure(api_key=api_key)
         
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Gemini 2.0 Flash Experimental 모델 사용
+        model = genai.GenerativeModel('gemini-2.0-flash-experimental')
         
-        # seed 매개변수 제거하고 기본 설정만 사용
+        # 이미지 생성을 위한 설정
         generation_config = {
             "temperature": 0.4,
             "top_p": 1,
             "top_k": 32,
             "max_output_tokens": 4096,
+            "response_mime_type": "image/png",  # 이미지 응답 형식 지정
         }
+        
+        # 시드 설정 (선택적)
+        if seed is not None:
+            generation_config["seed"] = seed
         
         images = []
         
         with st.spinner(f"🎨 {num_images}장의 이미지를 생성 중입니다..."):
             for i in range(num_images):
+                # 이미지 생성 요청
                 response = model.generate_content(
                     prompt,
                     generation_config=generation_config,
                     stream=False
                 )
                 
+                # 응답에서 이미지 추출
                 if hasattr(response, 'candidates') and len(response.candidates) > 0:
                     for part in response.candidates[0].content.parts:
                         if hasattr(part, 'inline_data') and part.inline_data:
@@ -202,7 +213,11 @@ def generate_images(prompt, api_key, num_images=1):
 
 # 이미지 생성 로직
 if generate_button and api_key:
-    images = generate_images(prompt, api_key, num_images)
+    seed = None
+    if use_image_seed:
+        seed = image_seed
+    
+    images = generate_images(prompt, api_key, num_images, seed)
     
     if images:
         st.markdown("### ✅ 생성된 이미지")
@@ -230,3 +245,5 @@ if generate_button and api_key:
                 st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.error("이미지를 생성할 수 없습니다. 다른 프롬프트를 시도해보세요.")
