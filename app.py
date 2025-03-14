@@ -133,10 +133,12 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 이미지 시드 조절 옵션 (선택적)
-    use_image_seed = st.checkbox("이미지 시드 조절 사용")
-    if use_image_seed:
-        image_seed = st.number_input("이미지 시드 값", min_value=0, max_value=10000, value=42)
+    # 이미지 크기 조절 옵션
+    image_size = st.radio(
+        "이미지 크기 선택",
+        options=["1024x1024", "1152x896", "896x1152", "1536x768", "768x1536"],
+        index=0
+    )
     
     st.markdown("---")
     
@@ -169,21 +171,16 @@ if not api_key:
     st.warning("⚠️ 사이드바에 API 키를 먼저 입력해주세요")
 
 # 이미지 생성 함수
-def generate_images(prompt, api_key, num_images=1, seed=None):
+def generate_images(prompt, api_key, num_images=1, image_size="1024x1024"):
     try:
         # API 키 설정
         genai.configure(api_key=api_key)
         
-        # 안전 설정 구성
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
+        # 이미지 크기 파싱
+        width, height = map(int, image_size.split('x'))
         
-        # 모델 설정
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        # 모델 설정 - 이제 Imagen 모델을 사용합니다
+        model = genai.GenerativeModel('imagen-4.0')
         
         images = []
         
@@ -195,21 +192,15 @@ def generate_images(prompt, api_key, num_images=1, seed=None):
                     "top_p": 0.95,
                     "top_k": 40,
                     "max_output_tokens": 8192,
-                    "response_mime_types": ["image/png"],
                 }
-                
-                # 시드 설정 (선택적)
-                if seed is not None:
-                    generation_config["seed"] = seed + i  # 각 이미지마다 다른 시드 사용
                 
                 # 이미지 생성 프롬프트 설정
                 image_prompt = f"{prompt}\n이미지만 생성해주세요."
                 
-                # 이미지 생성 요청
+                # 이미지 생성 요청 (Imagen 모델은 다른 매개변수를 사용)
                 response = model.generate_content(
-                    image_prompt,
+                    contents=image_prompt,
                     generation_config=generation_config,
-                    safety_settings=safety_settings,
                     stream=False
                 )
                 
@@ -229,11 +220,7 @@ def generate_images(prompt, api_key, num_images=1, seed=None):
 
 # 이미지 생성 로직
 if generate_button and api_key:
-    seed = None
-    if use_image_seed:
-        seed = image_seed
-    
-    images = generate_images(prompt, api_key, num_images, seed)
+    images = generate_images(prompt, api_key, num_images, image_size)
     
     if images:
         st.markdown("### ✅ 생성된 이미지")
