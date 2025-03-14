@@ -131,10 +131,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    st.subheader("❄️ 이미지 설정")
-    use_image_seed = st.checkbox("이미지 시드 조절 사용")
-    if use_image_seed:
-        image_seed = st.number_input("이미지 시드 값", min_value=0, max_value=10000, value=42)
+    # 이미지 시드 조절 옵션 제거 (문제 해결을 위해)
     
     st.markdown("---")
     
@@ -167,21 +164,19 @@ if not api_key:
     st.warning("⚠️ 사이드바에 API 키를 먼저 입력해주세요")
 
 # 이미지 생성 함수
-def generate_images(prompt, api_key, num_images=1, seed=None):
+def generate_images(prompt, api_key, num_images=1):
     try:
         genai.configure(api_key=api_key)
         
         model = genai.GenerativeModel('gemini-1.5-flash')
         
+        # seed 매개변수 제거하고 기본 설정만 사용
         generation_config = {
             "temperature": 0.4,
             "top_p": 1,
             "top_k": 32,
             "max_output_tokens": 4096,
         }
-        
-        if seed is not None:
-            generation_config["seed"] = seed
         
         images = []
         
@@ -207,11 +202,7 @@ def generate_images(prompt, api_key, num_images=1, seed=None):
 
 # 이미지 생성 로직
 if generate_button and api_key:
-    seed = None
-    if use_image_seed:
-        seed = image_seed
-    
-    images = generate_images(prompt, api_key, num_images, seed)
+    images = generate_images(prompt, api_key, num_images)
     
     if images:
         st.markdown("### ✅ 생성된 이미지")
